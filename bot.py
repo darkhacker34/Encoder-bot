@@ -97,9 +97,6 @@ async def handle_video(client, message):
             if os.path.exists(output_file):
                 os.remove(output_file)
 
-@app.before_first_request
-def setup():
-    bot.start()
-
 if __name__ == '__main__':
+    bot.start()
     app.run(port=8000)
