@@ -1,10 +1,6 @@
 from pyrogram import Client, filters
-import subprocess
-import os
 from flask import Flask, request, jsonify
-import threading
-import logging
-import time
+import threading, logging, time, subprocess, json, os, subprocess
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -57,7 +53,15 @@ def format_progress_bar(filename, percentage, done, total_size, status, eta, spe
         f"┖ ᴜsᴇʀ: {user_mention} | ɪᴅ: {user_id}" 
     )
 
-# Handler for video messages
+def get_ffmpeg_info(file_path):
+    try:
+        result = subprocess.run(['ffmpeg', '-v', 'error', '-show_entries', 'format=duration,bit_rate', '-show_entries', 'stream=codec_type,codec_name,profile,width,height,bit_rate', '-of', 'json', file_path],
+                                capture_output=True, text=True)
+        return json.loads(result.stdout)
+    except Exception as e:
+        logger.error(f"Error getting FFmpeg info: {e}")
+        return {}
+
 @app.on_message(filters.video)
 async def handle_video(client, message):
     try:
@@ -90,6 +94,31 @@ async def handle_video(client, message):
         subprocess.run(command, check=True)
         elapsed_time = time.time() - start_time
         logger.info(f"Encoded video file: {output_file}")
+
+        # Get detailed information about the original and encoded videos
+        original_info = get_ffmpeg_info(input_file)
+        encoded_info = get_ffmpeg_info(output_file)
+
+        # Format detailed information
+        def format_detailed_info(info, file_type):
+            streams = info.get('streams', [])
+            format_info = info.get('format', {})
+            duration = format_info.get('duration', 'N/A')
+            bitrate = format_info.get('bit_rate', 'N/A')
+            
+            details = [f"┏ {file_type} ɪɴғᴏʀᴍᴀᴛɪᴏɴ:"]
+            details.append(f"┠ Duration: {duration} sec")
+            details.append(f"┠ Bitrate: {bitrate} bps")
+            for stream in streams:
+                codec_type = stream.get('codec_type', 'N/A')
+                codec_name = stream.get('codec_name', 'N/A')
+                profile = stream.get('profile', 'N/A')
+                width = stream.get('width', 'N/A')
+                height = stream.get('height', 'N/A')
+                details.append(f"┠ {codec_type.capitalize()} Codec: {codec_name} (Profile: {profile})")
+                if codec_type == 'video':
+                    details.append(f"┠ Resolution: {width}x{height}")
+            return '\n'.join(details)
 
         # Upload the encoded video back to the user
         async def update_upload_progress(current, total):
@@ -128,7 +157,14 @@ async def handle_video(client, message):
             user_mention=user_mention,
             user_id=user_id
         )
-        await message.reply_text(progress_bar)
+
+        detailed_info = (
+            format_detailed_info(original_info, "Original") + '\n' +
+            format_detailed_info(encoded_info, "Encoded") + '\n' +
+            progress_bar
+        )
+
+        await message.reply_text(detailed_info)
 
     except Exception as e:
         logger.error(f"Error processing video: {e}")
@@ -138,6 +174,15 @@ async def handle_video(client, message):
             os.remove(input_file)
         if os.path.exists(output_file):
             os.remove(output_file)
+
+
+
+
+
+
+
+
+
 
 # Flask route for a simple test endpoint
 @flask_app.route('/')
