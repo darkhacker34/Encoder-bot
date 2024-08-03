@@ -28,7 +28,7 @@ def health_check():
 def run_flask():
     bot.run(host='0.0.0.0', port=8080)
 
-app = Client("my_bot", api_id="YOUR_API_ID", api_hash="YOUR_API_HASH", bot_token="YOUR_BOT_TOKEN")
+app = Client("my_bot", api_id="API_ID", api_hash="API_HASH", bot_token="BOT_TOKEN")
 
 # Define quality options and corresponding FFmpeg scale arguments
 quality_options = {
