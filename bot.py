@@ -1,102 +1,96 @@
-import os
-import subprocess
-import logging
-from flask import Flask, request
 from pyrogram import Client, filters
-import asyncio
-import tempfile
+from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+import subprocess
+import os, logging
+from flask import Flask
+import threading
 
-# Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-
-# Initialize Flask app
-app = Flask(__name__)
-
-# Replace with your actual credentials
 API_ID = os.getenv('API_ID', '25731065')
 API_HASH = os.getenv('API_HASH', 'be534fb5a5afd8c3308c9ca92afde672')
 BOT_TOKEN = os.getenv('BOT_TOKEN', '7351729896:AAGh9Z8Wn4vUjebCTWRtP8uXoflzgZHFhoc')
 
-bot = Client("my_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
-@app.route('/webhook', methods=['POST'])
-def webhook():
-    # Handle incoming webhook from Telegram
-    json_str = request.get_data(as_text=True)
-    update = bot.parse_update(json_str)
-    asyncio.run(bot.process_update(update))  # Ensure asynchronous processing
-    return 'OK'
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-@bot.on_message(filters.video | filters.document)
-async def handle_video(client, message):
-    logging.info(f"Received a file: {message.document.file_name if message.document else 'video'}")
-    
-    # Check if the file is a video
-    if message.video or (message.document and message.document.mime_type.startswith('video')):
-        try:
-            # Download the file
-            file_path = await message.download()
-            logging.info(f"Downloaded file to {file_path}")
-            
-            # Send initial progress message
-            progress_message = await client.send_message(message.chat.id, "Processing video... 0%")
-            
-            # Create temporary files for output and progress
-            output_file = tempfile.mktemp(suffix=".mp4")
-            progress_file = tempfile.mktemp()
 
-            # Command to process the video and capture progress
-            cmd = [
-                "ffmpeg",
-                "-i", file_path,
-                "-vf", "scale=1280:720",  # Example: Resize to 720p
-                "-c:v", "libx264",
-                "-preset", "fast",
-                "-crf", "23",
-                "-progress", progress_file,
-                output_file
-            ]
-            
-            logging.info("Starting FFmpeg process")
-            process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-            
-            # Monitor progress
-            while process.poll() is None:
-                if os.path.exists(progress_file):
-                    with open(progress_file, "r") as f:
-                        lines = f.readlines()
-                        for line in lines:
-                            if line.startswith("out_time_ms="):
-                                time_ms = int(line.split("=")[1])
-                                # Calculate progress as a percentage
-                                probe_cmd = ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", file_path]
-                                probe_process = subprocess.Popen(probe_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-                                output, _ = probe_process.communicate()
-                                duration = float(output.strip())
-                                percent = min((time_ms / 1000) / duration * 100, 100)
-                                await progress_message.edit(f"Processing video... {int(percent)}%")
-                
-                await asyncio.sleep(1)
+# Initialize Flask
+bot = Flask(__name__)
 
-            # Ensure progress file is cleaned up
-            if os.path.exists(progress_file):
-                os.remove(progress_file)
+@bot.route('/')
+def hello_world():
+    return 'Hello, World!'
 
-            logging.info("Sending processed video back to user")
-            # Send the processed file back to the user
-            await client.send_document(message.chat.id, output_file)
-            
-        except Exception as e:
-            logging.error(f"Error processing video: {e}")
-            await client.send_message(message.chat.id, "An error occurred while processing the video.")
-        
-        finally:
-            # Clean up files
-            if os.path.exists(file_path):
-                os.remove(file_path)
-            if os.path.exists(output_file):
-                os.remove(output_file)
+@bot.route('/health')
+def health_check():
+    return 'Healthy', 200
+
+def run_flask():
+    bot.run(host='0.0.0.0', port=8080)
+
+app = Client("my_bot", api_id="YOUR_API_ID", api_hash="YOUR_API_HASH", bot_token="YOUR_BOT_TOKEN")
+
+# Define quality options and corresponding FFmpeg scale arguments
+quality_options = {
+    "480p": "640:480",
+    "720p": "1280:720",
+    "1080p": "1920:1080"
+}
+
+@app.on_message(filters.document & filters.video)
+async def handle_movie(client, message):
+    file_name = message.document.file_name
+    # Notify user that downloading has started
+    await message.reply_text("Downloading...")
+
+    # Download the file
+    downloaded_file = await message.download()
+
+    # Create quality selection buttons
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("480p", callback_data="480p")],
+        [InlineKeyboardButton("720p", callback_data="720p")],
+        [InlineKeyboardButton("1080p", callback_data="1080p")]
+    ])
+
+    # Ask the user for the desired quality
+    await message.reply_text("Now quality:", reply_markup=keyboard)
+
+    # Save the original file path
+    message.data = downloaded_file
+
+@app.on_callback_query()
+async def handle_quality_selection(client, callback_query):
+    quality = callback_query.data
+    downloaded_file = callback_query.message.reply_to_message.document.file_name
+
+    if quality in quality_options:
+        # Define the output file name and encoding options
+        output_file = f"encoded_{quality}.mp4"
+        scale_option = quality_options[quality]
+
+        # Run FFmpeg command to compress the video
+        subprocess.run([
+            "ffmpeg",
+            "-i", downloaded_file,
+            "-vf", f"scale={scale_option}",
+            output_file
+        ], check=True)
+
+        # Send the encoded video back
+        await callback_query.message.reply_text(f"Here is your video at {quality}:")
+        await callback_query.message.reply_document(output_file)
+
+        # Clean up
+        os.remove(downloaded_file)
+        os.remove(output_file)
+
+        # Acknowledge the callback query
+        await callback_query.answer()
+
 
 if __name__ == '__main__':
-    bot.start()
-    app.run(port=8000)
+    threading.Thread(target=run_flask).start()
+    
+    # Start the Pyrogram Client
+    app.run()
