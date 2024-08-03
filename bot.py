@@ -58,6 +58,7 @@ def format_progress_bar(filename, percentage, done, total_size, status, eta, spe
     )
 
 # Handler for video messages
+
 @app.on_message(filters.video)
 async def handle_video(client, message):
     try:
@@ -69,30 +70,9 @@ async def handle_video(client, message):
 
         # Download the video
         start_time = time.time()
-        download_file = await message.download()  # Download the video
+        download_file = await message.download()  # Download the video with progress updates
         elapsed_time = time.time() - start_time
         logger.info(f"Downloaded video file: {download_file}")
-        
-        # Dummy progress information
-        percentage = 100.0
-        done = total_size
-        status = "Completed"
-        eta = "N/A"
-        speed = total_size / elapsed_time
-        
-        progress_bar = format_progress_bar(
-            filename=filename,
-            percentage=percentage,
-            done=done,
-            total_size=total_size,
-            status=status,
-            eta=eta,
-            speed=speed,
-            elapsed=elapsed_time,
-            user_mention=user_mention,
-            user_id=user_id
-        )
-        logger.info(progress_bar)
 
         input_file = download_file
         output_file = f"encoded_{int(time.time())}_{os.path.basename(input_file)}"  # Unique filename
@@ -113,32 +93,43 @@ async def handle_video(client, message):
         logger.info(f"Encoded video file: {output_file}")
 
         # Upload the encoded video back to the user
+        async def update_upload_progress(current, total):
+            percentage = (current / total) * 100
+            progress_bar = format_progress_bar(
+                filename=output_file,
+                percentage=percentage,
+                done=current,
+                total_size=total,
+                status="Uploading",
+                eta="N/A",
+                speed="N/A",
+                elapsed=elapsed_time,
+                user_mention=user_mention,
+                user_id=user_id
+            )
+            await message.reply_text(progress_bar)
+
         start_time = time.time()
-        await message.reply_video(video=output_file)
+        await message.reply_video(video=output_file, progress=update_upload_progress)
         elapsed_time = time.time() - start_time
         logger.info("Sent the encoded video back to the user")
 
-        # Dummy upload progress information
+        # Final progress message
         upload_size = os.path.getsize(output_file)
         percentage = 100.0
-        done = upload_size
-        status = "Completed"
-        eta = "N/A"
-        speed = upload_size / elapsed_time
-        
         progress_bar = format_progress_bar(
             filename=output_file,
             percentage=percentage,
-            done=done,
+            done=upload_size,
             total_size=upload_size,
-            status=status,
-            eta=eta,
-            speed=speed,
+            status="Completed",
+            eta="N/A",
+            speed=upload_size / elapsed_time,
             elapsed=elapsed_time,
             user_mention=user_mention,
             user_id=user_id
         )
-        logger.info(progress_bar)
+        await message.reply_text(progress_bar)
 
     except Exception as e:
         logger.error(f"Error processing video: {e}")
@@ -148,6 +139,10 @@ async def handle_video(client, message):
             os.remove(input_file)
         if os.path.exists(output_file):
             os.remove(output_file)
+
+
+
+
 
 # Flask route for a simple test endpoint
 @flask_app.route('/')
