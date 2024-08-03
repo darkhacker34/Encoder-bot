@@ -58,7 +58,6 @@ def format_progress_bar(filename, percentage, done, total_size, status, eta, spe
     )
 
 # Handler for video messages
-
 @app.on_message(filters.video)
 async def handle_video(client, message):
     try:
@@ -139,10 +138,6 @@ async def handle_video(client, message):
             os.remove(input_file)
         if os.path.exists(output_file):
             os.remove(output_file)
-
-
-
-
 
 # Flask route for a simple test endpoint
 @flask_app.route('/')
