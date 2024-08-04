@@ -1,3 +1,4 @@
+import os
 from telegram import Update
 from telegram.ext import Updater, CommandHandler, MessageHandler, CallbackContext
 from telegram.filters import Document
@@ -24,8 +25,8 @@ def health_check():
 def run_flask():
     app.run(host='0.0.0.0', port=8000)
 
-# Replace 'YOUR_BOT_TOKEN' with your bot's API token
-TOKEN = '7351729896:AAGh9Z8Wn4vUjebCTWRtP8uXoflzgZHFhoc'
+# Get the bot's API token from environment variable
+TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
 
 def start(update: Update, context: CallbackContext):
     update.message.reply_text('Send me a video and I will process it.')
