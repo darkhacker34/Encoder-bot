@@ -1,7 +1,5 @@
-import os
 from telegram import Update
-from telegram.ext import Updater, CommandHandler, MessageHandler, CallbackContext
-from telegram.filters import Document
+from telegram.ext import Updater, CommandHandler, MessageHandler, CallbackContext, filters
 import subprocess
 import os
 import threading
@@ -25,8 +23,8 @@ def health_check():
 def run_flask():
     app.run(host='0.0.0.0', port=8000)
 
-# Get the bot's API token from environment variable
-TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
+# Set your bot's API token here
+TOKEN = '7351729896:AAGh9Z8Wn4vUjebCTWRtP8uXoflzgZHFhoc'
 
 def start(update: Update, context: CallbackContext):
     update.message.reply_text('Send me a video and I will process it.')
@@ -47,11 +45,11 @@ def handle_document(update: Update, context: CallbackContext):
     os.remove('output.mp4')
 
 def main():
-    updater = Updater(TOKEN, use_context=True)
+    updater = Updater(TOKEN)
     dp = updater.dispatcher
 
     dp.add_handler(CommandHandler("start", start))
-    dp.add_handler(MessageHandler(Document.MIME_TYPE["video/mp4"], handle_document))
+    dp.add_handler(MessageHandler(filters.Document.MIME_TYPE["video/mp4"], handle_document))
 
     updater.start_polling()
     updater.idle()
