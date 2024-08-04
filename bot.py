@@ -1,96 +1,64 @@
-from pyrogram import Client, filters
-from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from telegram import Update
+from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext
 import subprocess
-import os, logging
-from flask import Flask
+import os
 import threading
-
-API_ID = os.getenv('API_ID', '25731065')
-API_HASH = os.getenv('API_HASH', 'be534fb5a5afd8c3308c9ca92afde672')
-BOT_TOKEN = os.getenv('BOT_TOKEN', '7351729896:AAGh9Z8Wn4vUjebCTWRtP8uXoflzgZHFhoc')
-
+import logging
+from flask import Flask
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-
 # Initialize Flask
-bot = Flask(__name__)
+app = Flask(__name__)
 
-@bot.route('/')
+@app.route('/')
 def hello_world():
     return 'Hello, World!'
 
-@bot.route('/health')
+@app.route('/health')
 def health_check():
     return 'Healthy', 200
 
 def run_flask():
-    bot.run(host='0.0.0.0', port=8080)
+    app.run(host='0.0.0.0', port=8000)
 
-app = Client("my_bot", api_id="API_ID", api_hash="API_HASH", bot_token="BOT_TOKEN")
+# Replace 'YOUR_BOT_TOKEN' with your bot's API token
+TOKEN = '7351729896:AAGh9Z8Wn4vUjebCTWRtP8uXoflzgZHFhoc'
 
-# Define quality options and corresponding FFmpeg scale arguments
-quality_options = {
-    "480p": "640:480",
-    "720p": "1280:720",
-    "1080p": "1920:1080"
-}
+def start(update: Update, context: CallbackContext):
+    update.message.reply_text('Send me a video and I will process it.')
 
-@app.on_message(filters.document & filters.video)
-async def handle_movie(client, message):
-    file_name = message.document.file_name
-    # Notify user that downloading has started
-    await message.reply_text("Downloading...")
-
+def handle_document(update: Update, context: CallbackContext):
     # Download the file
-    downloaded_file = await message.download()
+    file = update.message.document.get_file()
+    file.download('input.mp4')
 
-    # Create quality selection buttons
-    keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("480p", callback_data="480p")],
-        [InlineKeyboardButton("720p", callback_data="720p")],
-        [InlineKeyboardButton("1080p", callback_data="1080p")]
-    ])
+    # Run ffmpeg command to encode the video
+    subprocess.run(['ffmpeg', '-i', 'input.mp4', '-vcodec', 'libx264', '-b:v', '1M', 'output.mp4'])
 
-    # Ask the user for the desired quality
-    await message.reply_text("Now quality:", reply_markup=keyboard)
+    # Send the encoded video back
+    context.bot.send_video(chat_id=update.effective_chat.id, video=open('output.mp4', 'rb'))
 
-    # Save the original file path
-    message.data = downloaded_file
+    # Clean up files
+    os.remove('input.mp4')
+    os.remove('output.mp4')
 
-@app.on_callback_query()
-async def handle_quality_selection(client, callback_query):
-    quality = callback_query.data
-    downloaded_file = callback_query.message.reply_to_message.document.file_name
+def main():
+    updater = Updater(TOKEN, use_context=True)
+    dp = updater.dispatcher
 
-    if quality in quality_options:
-        # Define the output file name and encoding options
-        output_file = f"encoded_{quality}.mp4"
-        scale_option = quality_options[quality]
+    dp.add_handler(CommandHandler("start", start))
+    dp.add_handler(MessageHandler(Filters.document.mime_type("video/mp4"), handle_document))
 
-        # Run FFmpeg command to compress the video
-        subprocess.run([
-            "ffmpeg",
-            "-i", downloaded_file,
-            "-vf", f"scale={scale_option}",
-            output_file
-        ], check=True)
-
-        # Send the encoded video back
-        await callback_query.message.reply_text(f"Here is your video at {quality}:")
-        await callback_query.message.reply_document(output_file)
-
-        # Clean up
-        os.remove(downloaded_file)
-        os.remove(output_file)
-
-        # Acknowledge the callback query
-        await callback_query.answer()
-
+    updater.start_polling()
+    updater.idle()
 
 if __name__ == '__main__':
-    threading.Thread(target=run_flask).start()
-    
-    # Start the Pyrogram Client
-    app.run()
+    # Start the Flask server in a separate thread
+    flask_thread = threading.Thread(target=run_flask)
+    flask_thread.daemon = True
+    flask_thread.start()
+
+    # Start the Telegram bot
+    main()
