@@ -19,5 +19,10 @@ COPY . .
 # Expose port 8000 for Flask
 EXPOSE 8000
 
-# Set the entry point to run both Flask and the Telegram bot
-CMD ["sh", "-c", "python bot.py"]
+# Set environment variable for the Telegram bot token
+ENV TELEGRAM_BOT_TOKEN=7351729896:AAGh9Z8Wn4vUjebCTWRtP8uXoflzgZHFhoc
+
+# Copy and set the entrypoint script
+COPY start.sh /start.sh
+RUN chmod +x /start.sh
+CMD ["/start.sh"]
